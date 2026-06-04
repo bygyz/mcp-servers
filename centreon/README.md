@@ -36,7 +36,7 @@ For `acknowledge_host` and `schedule_downtime`, the user needs write access.
 
 ## Usage
 
-### With Claude Desktop
+### With any MCP client
 
 ```json
 {
@@ -70,8 +70,8 @@ Alert received: `web-prod-01 — HTTP service CRITICAL`
 2. `get_host_status("web-prod-01")` — is the host itself up? Which other services are affected?
 3. `list_alerts(severity="critical")` — is this isolated or part of a wider outage?
 
-If the host is up but the HTTP service is down → Claude recommends `restart_service nginx` (P3).
-If the host itself is down → Claude escalates P1 with `requires_human: true`.
+If the host is up but the HTTP service is down → the agent recommends `restart_service nginx` (P3).
+If the host itself is down → the agent escalates P1 with `requires_human: true`.
 
 ## License
 

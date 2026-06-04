@@ -38,7 +38,7 @@ To enable the GLPI API: **Setup → General → API → Enable REST API → Add 
 
 ## Usage
 
-### With Claude Desktop
+### With any MCP client
 
 ```json
 {
@@ -70,7 +70,7 @@ Then register in Trianova: **Settings → MCP Servers → Add → URL: http://lo
 Alert: `db-prod-02 — disk 94%`
 
 1. `search_tickets(hostname="db-prod-02", status="new")` → finds ticket #4821 opened 2 days ago for the same issue
-2. Claude: this is a recurring problem, not an isolated spike → escalates P2 instead of auto-resolving P3
+2. The agent detects a recurring problem, not an isolated spike → escalates P2 instead of auto-resolving P3
 3. `update_ticket(4821, followup="New alert: disk at 94%. Auto-remediation running.")` → keeps GLPI in sync
 
 ### Root cause via CMDB
@@ -78,7 +78,7 @@ Alert: `app-srv-03 — memory at 98%`
 
 1. `get_asset("app-srv-03")` → 8GB RAM, last updated 3 months ago
 2. `search_recent_changes("app-srv-03", days=7)` → finds a software deployment 6 hours ago
-3. Claude: memory spike correlates with recent deployment → `next_step` includes rollback recommendation
+3. The agent correlates the memory spike with the recent deployment → `next_step` includes rollback recommendation
 
 ### Post-remediation sync
 After Trianova auto-resolves an incident via SSH:

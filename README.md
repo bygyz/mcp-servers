@@ -19,7 +19,9 @@ no awareness of scheduled maintenance windows.
 
 These servers give AI agents the same context a senior engineer has when they open their laptop at 2am.
 
-## Quick start with Claude Desktop
+## Quick start
+
+Add to your MCP client config:
 
 ```json
 {
@@ -43,8 +45,8 @@ These servers give AI agents the same context a senior engineer has when they op
 ## Use with Trianova
 
 These servers are natively supported by [Trianova](https://trianova.io).
-Register them in **Settings → MCP Servers** and Claude will automatically
-use them during incident triage.
+Register them in **Settings → MCP Servers** — the triage agent will use them
+automatically during incident analysis.
 
 ## Contributing
 

@@ -46,9 +46,9 @@ To generate a PRTG passhash: PRTG web UI → Account Settings → My Account →
 
 ## Usage
 
-### With Claude Desktop
+### With any MCP client
 
-Add to your `claude_desktop_config.json`:
+Add to your MCP client config:
 
 ```json
 {
@@ -80,14 +80,14 @@ PRTG_HOST=https://prtg.yourdomain.com PRTG_API_TOKEN=xxx trianova-mcp-prtg
 
 ## Example triage flow
 
-When Trianova receives an alert for `switch-core-01`, Claude can:
+When Trianova receives an alert for `switch-core-01`, the triage agent can:
 
 1. `get_prtg_summary()` — check overall health (is this an isolated issue or widespread?)
 2. `list_scheduled_downtimes()` — is there a maintenance window active? (don't page on-call)
 3. `get_device_status("switch-core-01")` — get all sensor statuses for the device
 4. `get_sensor_history(sensor_id=1042, hours=4)` — was bandwidth climbing before the alert?
 
-Result: Claude classifies the incident with full context instead of just the raw alert message.
+Result: the triage agent classifies the incident with full context instead of just the raw alert message.
 
 ## License
 
