@@ -18,6 +18,7 @@ ZABBIX_API_TOKEN = os.environ.get("ZABBIX_API_TOKEN", "")  # Zabbix 5.4+ API tok
 ZABBIX_USER = os.environ.get("ZABBIX_USER", "")
 ZABBIX_PASSWORD = os.environ.get("ZABBIX_PASSWORD", "")
 ZABBIX_VERIFY_SSL = os.environ.get("ZABBIX_VERIFY_SSL", "true").lower() == "true"
+ZABBIX_READ_ONLY = os.environ.get("ZABBIX_READ_ONLY", "false").lower() == "true"
 
 _auth_cache: dict[str, tuple[str, float]] = {}  # host → (token, expires_at)
 _SESSION_TTL = 3600  # re-authenticate after 1h
@@ -347,7 +348,10 @@ async def acknowledge_problem(
     close: set True to close the problem (marks it as resolved manually)
     Use this after auto-remediation to acknowledge the alert and suppress
     further notifications.
+    Disabled when ZABBIX_READ_ONLY=true.
     """
+    if ZABBIX_READ_ONLY:
+        return "Read-only mode enabled — acknowledge_problem is disabled (set ZABBIX_READ_ONLY=false to allow writes)."
     action = 6 if close else 2  # 2=acknowledge, 6=acknowledge+close (Zabbix 3.4+)
     await _call("event.acknowledge", {
         "eventids": [event_id],
@@ -426,6 +430,9 @@ async def create_maintenance_window(
     now = int(time.time())
     till = now + duration_minutes * 60
     window_name = name or f"Trianova remediation — {host_display}"
+
+    if ZABBIX_READ_ONLY:
+        return "Read-only mode enabled — create_maintenance_window is disabled (set ZABBIX_READ_ONLY=false to allow writes)."
 
     result = await _call("maintenance.create", {
         "name": window_name,

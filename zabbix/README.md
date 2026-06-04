@@ -36,6 +36,7 @@ ZABBIX_USER=your-username
 ZABBIX_PASSWORD=your-password
 
 ZABBIX_VERIFY_SSL=true               # Set to false for self-signed certs
+ZABBIX_READ_ONLY=false               # Set to true to block all write operations
 MCP_TRANSPORT=stdio                  # stdio (default) or sse
 ```
 
