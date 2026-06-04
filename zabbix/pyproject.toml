@@ -1,0 +1,30 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "trianova-mcp-zabbix"
+version = "0.1.0"
+description = "MCP server for Zabbix — AI-ready monitoring tools for IT ops triage agents"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.11"
+keywords = ["mcp", "zabbix", "monitoring", "aiops", "trianova"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: System Administrators",
+    "Topic :: System :: Systems Administration",
+    "License :: OSI Approved :: MIT License",
+]
+dependencies = [
+    "mcp>=1.0.0",
+    "httpx>=0.27.0",
+]
+
+[project.scripts]
+trianova-mcp-zabbix = "trianova_mcp_zabbix.server:main"
+
+[project.urls]
+Homepage = "https://github.com/bygyz/mcp-servers"
+Repository = "https://github.com/bygyz/mcp-servers"
+"Bug Tracker" = "https://github.com/bygyz/mcp-servers/issues"

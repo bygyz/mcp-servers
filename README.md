@@ -7,6 +7,7 @@ Built by [Trianova](https://trianova.io) to connect AI triage agents to the tool
 
 | Package | Tool | Category | PyPI |
 |---------|------|----------|------|
+| [`trianova-mcp-zabbix`](./zabbix/) | Zabbix | Monitoring | `pip install trianova-mcp-zabbix` |
 | [`trianova-mcp-prtg`](./prtg/) | PRTG Network Monitor | Monitoring | `pip install trianova-mcp-prtg` |
 | [`trianova-mcp-centreon`](./centreon/) | Centreon | Monitoring | `pip install trianova-mcp-centreon` |
 | [`trianova-mcp-glpi`](./glpi/) | GLPI ITSM/CMDB | Ticketing + Assets | `pip install trianova-mcp-glpi` |
@@ -37,6 +38,10 @@ Add to your MCP client config:
     "glpi": {
       "command": "trianova-mcp-glpi",
       "env": { "GLPI_HOST": "https://glpi.corp.local", "GLPI_APP_TOKEN": "xxx", "GLPI_USER_TOKEN": "yyy" }
+    },
+    "zabbix": {
+      "command": "trianova-mcp-zabbix",
+      "env": { "ZABBIX_HOST": "https://zabbix.corp.local", "ZABBIX_API_TOKEN": "xxx" }
     }
   }
 }
