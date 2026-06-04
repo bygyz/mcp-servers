@@ -11,6 +11,8 @@ Built by [Trianova](https://trianova.io) — AI-powered IT ops for SMBs and MSPs
 | `get_centreon_summary` | Overall health: hosts and services counts by status |
 | `list_alerts` | Active alerts — non-OK hosts and services, filterable by severity |
 | `get_host_status` | Full status of a specific host with all its services |
+| `get_host_timeline` | Event history for a host — state changes, acks, downtimes, comments |
+| `request_check` | Trigger an immediate check post-remediation without waiting for next poll |
 | `list_scheduled_downtimes` | Active maintenance windows — check before escalating |
 | `acknowledge_host` | Acknowledge a host problem to suppress repeat notifications |
 | `schedule_downtime` | Schedule a maintenance window before planned remediation |
@@ -25,10 +27,17 @@ pip install trianova-mcp-centreon
 
 ```bash
 CENTREON_HOST=https://centreon.yourdomain.com
+
+# Auth — API token (preferred, Centreon 23.x+)
+CENTREON_API_TOKEN=your-api-token    # Centreon UI: User menu → API tokens
+
+# Auth — username/password (fallback)
 CENTREON_USERNAME=trianova-api
 CENTREON_PASSWORD=your-password
-CENTREON_VERIFY_SSL=true   # Set to false for self-signed certs
-MCP_TRANSPORT=stdio        # stdio (default) or sse
+
+CENTREON_VERIFY_SSL=true             # Set to false for self-signed certs
+CENTREON_READ_ONLY=false             # Set to true to block all write operations
+MCP_TRANSPORT=stdio                  # stdio (default) or sse
 ```
 
 Create a dedicated read-only API user in Centreon: **Configuration → Users → Add** with role "API Access".

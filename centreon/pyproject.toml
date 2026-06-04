@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "trianova-mcp-centreon"
-version = "0.1.0"
+version = "0.2.0"
 description = "MCP server for Centreon — AI-ready monitoring tools for IT ops agents"
 readme = "README.md"
 license = { text = "MIT" }
