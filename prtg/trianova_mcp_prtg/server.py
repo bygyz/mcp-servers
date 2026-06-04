@@ -17,6 +17,7 @@ PRTG_API_TOKEN = os.environ.get("PRTG_API_TOKEN", "")
 PRTG_USERNAME = os.environ.get("PRTG_USERNAME", "")
 PRTG_PASSHASH = os.environ.get("PRTG_PASSHASH", "")
 PRTG_VERIFY_SSL = os.environ.get("PRTG_VERIFY_SSL", "true").lower() == "true"
+PRTG_READ_ONLY = os.environ.get("PRTG_READ_ONLY", "false").lower() == "true"
 
 
 def _base_url() -> str:
@@ -36,6 +37,19 @@ def _client() -> httpx.AsyncClient:
     return httpx.AsyncClient(verify=PRTG_VERIFY_SSL, timeout=15.0)
 
 
+async def _table(content: str, columns: str, count: int = 200, **kwargs) -> dict:
+    """Shared helper for PRTG table.json API calls."""
+    params: dict = {**_auth_params(), "content": content, "columns": columns,
+                    "count": count, "output": "json"}
+    for key, value in kwargs.items():
+        if value is not None:
+            params[key] = value
+    async with _client() as client:
+        resp = await client.get(f"{_base_url()}/table.json", params=params)
+        resp.raise_for_status()
+        return resp.json()
+
+
 # PRTG sensor status codes
 _STATUS = {
     1: "Unknown", 2: "Scanning", 3: "Up", 4: "Warning",
@@ -52,22 +66,11 @@ async def list_alerts(include_acknowledged: bool = False) -> str:
     Returns sensor name, device, status, message, and last check time.
     Use this to understand the current alert landscape before triaging an incident.
     """
-    async with _client() as client:
-        params = {
-            **_auth_params(),
-            "content": "sensors",
-            "columns": "objid,name,device,host,status,message,lastvalue,lastcheck",
-            "filter_status": "4,5,10,13,14",  # Warning, Down, Unusual, Acknowledged Down, Partial Down
-            "count": 200,
-            "output": "json",
-        }
-        if not include_acknowledged:
-            params["filter_status"] = "4,5,10,14"
-
-        resp = await client.get(f"{_base_url()}/table.json", params=params)
-        resp.raise_for_status()
-        data = resp.json()
-
+    filter_status = "4,5,10,13,14" if include_acknowledged else "4,5,10,14"
+    data = await _table(
+        "sensors", "objid,name,device,host,status,message,lastvalue,lastcheck",
+        filter_status=filter_status,
+    )
     sensors = data.get("sensors", [])
     if not sensors:
         return "No active alerts in PRTG."
@@ -89,19 +92,10 @@ async def get_device_status(host: str) -> str:
     Returns all sensors for that device with their current status and last value.
     Use this to get a full picture of a host's health during incident triage.
     """
-    async with _client() as client:
-        params = {
-            **_auth_params(),
-            "content": "sensors",
-            "columns": "objid,name,status,message,lastvalue,lastcheck,uptime",
-            "filter_device": host,
-            "count": 100,
-            "output": "json",
-        }
-        resp = await client.get(f"{_base_url()}/table.json", params=params)
-        resp.raise_for_status()
-        data = resp.json()
-
+    data = await _table(
+        "sensors", "objid,name,status,message,lastvalue,lastcheck,uptime",
+        count=100, filter_device=host,
+    )
     sensors = data.get("sensors", [])
     if not sensors:
         return f"No sensors found for device '{host}' in PRTG."
@@ -158,19 +152,10 @@ async def list_scheduled_downtimes() -> str:
     CRITICAL: check this before escalating an incident — alerts during planned maintenance
     should not page on-call engineers.
     """
-    async with _client() as client:
-        params = {
-            **_auth_params(),
-            "content": "sensors",
-            "columns": "objid,name,device,pauseuntil,message",
-            "filter_status": "12",  # Paused Until
-            "count": 100,
-            "output": "json",
-        }
-        resp = await client.get(f"{_base_url()}/table.json", params=params)
-        resp.raise_for_status()
-        data = resp.json()
-
+    data = await _table(
+        "sensors", "objid,name,device,pauseuntil,message",
+        count=100, filter_status="12",
+    )
     sensors = data.get("sensors", [])
     if not sensors:
         return "No scheduled downtimes currently active in PRTG."
@@ -194,13 +179,12 @@ async def acknowledge_alert(
     Use only when the incident is understood and being handled.
     object_id is the PRTG sensor or device object ID.
     """
+    if PRTG_READ_ONLY:
+        return "Read-only mode enabled — acknowledge_alert is disabled (set PRTG_READ_ONLY=false to allow writes)."
+
     async with _client() as client:
-        params = {
-            **_auth_params(),
-            "id": object_id,
-            "ackmsg": message,
-        }
-        resp = await client.get(f"{_base_url()}/acknowledgealarm.htm", params=params)
+        resp = await client.get(f"{_base_url()}/acknowledgealarm.htm",
+                                params={**_auth_params(), "id": object_id, "ackmsg": message})
         resp.raise_for_status()
 
     return f"Alert acknowledged for object {object_id}: '{message}'"
@@ -216,15 +200,13 @@ async def pause_sensor(
     Pause a PRTG sensor for a given duration (in minutes).
     Use during planned remediation to prevent alert noise.
     """
+    if PRTG_READ_ONLY:
+        return "Read-only mode enabled — pause_sensor is disabled (set PRTG_READ_ONLY=false to allow writes)."
+
     async with _client() as client:
-        params = {
-            **_auth_params(),
-            "id": object_id,
-            "action": 1,
-            "duration": duration_minutes,
-            "pausemsg": message,
-        }
-        resp = await client.get(f"{_base_url()}/pauseobjectfor.htm", params=params)
+        resp = await client.get(f"{_base_url()}/pauseobjectfor.htm",
+                                params={**_auth_params(), "id": object_id,
+                                        "action": 1, "duration": duration_minutes, "pausemsg": message})
         resp.raise_for_status()
 
     return f"Sensor {object_id} paused for {duration_minutes} minutes: '{message}'"
@@ -237,8 +219,7 @@ async def get_prtg_summary() -> str:
     Use as a quick context check at the start of triage.
     """
     async with _client() as client:
-        params = {**_auth_params(), "output": "json"}
-        resp = await client.get(f"{_base_url()}/getstatus.json", params=params)
+        resp = await client.get(f"{_base_url()}/getstatus.json", params={**_auth_params(), "output": "json"})
         resp.raise_for_status()
         data = resp.json()
 
@@ -252,6 +233,106 @@ async def get_prtg_summary() -> str:
         f"Paused: {s.get('SensorsPaused', '?')} | "
         f"Up: {s.get('SensorsUp', '?')}"
     )
+
+
+@mcp.tool()
+async def get_sensor_details(sensor_id: int) -> str:
+    """
+    Get full details for a specific PRTG sensor by its object ID.
+    Returns sensor type, status, current value, thresholds, last error, uptime, and tags.
+    Use this after get_device_status identifies a failing sensor — get the full context
+    including error messages and configured limits before escalating.
+    """
+    async with _client() as client:
+        resp = await client.get(f"{_base_url()}/getsensordetails.json",
+                                params={**_auth_params(), "id": sensor_id, "output": "json"})
+        resp.raise_for_status()
+        data = resp.json()
+
+    sensor = data.get("sensordata", data)
+    lines = [
+        f"Sensor #{sensor_id}: {sensor.get('name', 'N/A')}",
+        f"Type: {sensor.get('sensortype', 'N/A')}",
+        f"Status: {sensor.get('statustext', sensor.get('status', 'N/A'))}",
+        f"Last value: {sensor.get('lastvalue', 'N/A')}",
+        f"Last check: {sensor.get('lastcheck', 'N/A')}",
+        f"Last up: {sensor.get('lastup', 'N/A')}",
+        f"Last error: {sensor.get('lasterror', 'N/A')}",
+        f"Uptime: {sensor.get('uptime', 'N/A')}",
+        f"Device: {sensor.get('devicename', 'N/A')}",
+        f"Group: {sensor.get('groupname', 'N/A')}",
+        f"Tags: {sensor.get('tags', 'N/A')}",
+        f"Message: {sensor.get('message', 'N/A')}",
+    ]
+    return "\n".join(lines)
+
+
+@mcp.tool()
+async def get_channels(sensor_id: int) -> str:
+    """
+    Get all monitoring channels for a PRTG sensor with their current values and configured limits.
+    Channels are the individual metrics a sensor tracks (e.g. CPU %, memory MB, disk %).
+    Use this to understand exactly which threshold was breached and by how much —
+    essential for assessing severity before escalating or auto-remediating.
+    """
+    data = await _table(
+        "channels",
+        "objid,name,lastvalue,minimum,maximum,limitmaxerror,limitmaxwarning,limitmode",
+        count=50, id=sensor_id, noraw=1,
+    )
+    channels = data.get("channels", [])
+    if not channels:
+        return f"No channels found for sensor {sensor_id}."
+
+    lines = [f"Channels for sensor #{sensor_id} ({len(channels)}):"]
+    for ch in channels:
+        limit_info = ""
+        if ch.get("limitmaxerror"):
+            limit_info = f" | error threshold: {ch['limitmaxerror']}"
+        elif ch.get("limitmaxwarning"):
+            limit_info = f" | warning threshold: {ch['limitmaxwarning']}"
+        lines.append(
+            f"  {ch.get('name', 'N/A')}: {ch.get('lastvalue', 'N/A')}"
+            f"{limit_info}"
+        )
+    return "\n".join(lines)
+
+
+@mcp.tool()
+async def get_messages(
+    host: Optional[str] = None,
+    date_range: Optional[str] = None,
+    limit: int = 50,
+) -> str:
+    """
+    Get PRTG system log messages, optionally filtered by device name and date range.
+    date_range values: 'today', 'yesterday', '7days', '30days'
+    Use this to find recent events on a device — configuration changes, sensor errors,
+    probe reconnects — that could explain an incident without waiting for a full audit.
+    """
+    kwargs: dict = {"sortby": "-datetime"}
+    if host:
+        kwargs["filter_name"] = f"@sub({host})"
+    if date_range:
+        kwargs["filter_drel"] = date_range
+
+    data = await _table(
+        "messages",
+        "objid,datetime,parent,type,name,status,message",
+        count=limit, **kwargs,
+    )
+    messages = data.get("messages", [])
+    if not messages:
+        scope = f" for '{host}'" if host else ""
+        return f"No messages found{scope} in PRTG."
+
+    lines = [f"Messages ({len(messages)}):"]
+    for m in messages:
+        lines.append(
+            f"  [{m.get('datetime', '?')}] [{m.get('type', '?')}] "
+            f"{m.get('name', 'N/A')} — {m.get('message', '')[:150]}"
+        )
+    return "\n".join(lines)
 
 
 def main() -> None:

@@ -11,7 +11,10 @@ Built by [Trianova](https://trianova.io) — AI-powered IT ops for SMBs and MSPs
 | `get_prtg_summary` | Overall health: total sensors, down, warning, paused counts |
 | `list_alerts` | Active alerts — down and warning sensors across the instance |
 | `get_device_status` | All sensors for a specific host with current status and last value |
+| `get_sensor_details` | Full details for a specific sensor — type, thresholds, last error, uptime |
+| `get_channels` | Channel values and configured limits — see exactly which threshold was breached |
 | `get_sensor_history` | Historical data for a sensor over the last N hours |
+| `get_messages` | System log messages for a device — config changes, errors, probe events |
 | `list_scheduled_downtimes` | Active maintenance windows — check before escalating |
 | `acknowledge_alert` | Acknowledge an alert to suppress repeat notifications |
 | `pause_sensor` | Pause a sensor for a given duration during remediation |
@@ -39,6 +42,7 @@ PRTG_PASSHASH=your-passhash
 
 # Optional
 PRTG_VERIFY_SSL=true      # Set to false for self-signed certs
+PRTG_READ_ONLY=false      # Set to true to block acknowledge_alert and pause_sensor
 MCP_TRANSPORT=stdio       # stdio (default) or sse
 ```
 
