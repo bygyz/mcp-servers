@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "trianova-mcp-glpi"
-version = "0.1.0"
+version = "0.2.0"
 description = "MCP server for GLPI ITSM/CMDB — AI-ready helpdesk and asset management tools for IT ops agents"
 readme = "README.md"
 license = { text = "MIT" }

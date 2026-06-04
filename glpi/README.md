@@ -12,8 +12,11 @@ Built by [Trianova](https://trianova.io) — AI-powered IT ops for SMBs and MSPs
 | `get_ticket` | Full ticket details including followups |
 | `create_ticket` | Create a new incident or request ticket |
 | `update_ticket` | Update status, add solution, or add a followup comment |
+| `assign_ticket` | Assign a ticket to a user and/or group — route to the right technician |
 | `get_asset` | Look up a server/computer in the CMDB — hardware, OS, warranty, location |
+| `search_assets_by_ip` | Look up a CMDB asset by IP address — for alerts that carry an IP not a hostname |
 | `search_recent_changes` | Recent changes recorded on a host — correlate incidents with changes |
+| `list_categories` | List ticket categories — find the right category_id before creating a ticket |
 
 ## Installation
 
