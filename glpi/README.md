@@ -6,6 +6,8 @@ Built by [Trianova](https://trianova.io) — AI-powered IT ops for SMBs and MSPs
 
 ## Tools
 
+**Tickets**
+
 | Tool | Description |
 |------|-------------|
 | `search_tickets` | Search tickets by hostname or status — detect duplicates before creating |
@@ -13,6 +15,29 @@ Built by [Trianova](https://trianova.io) — AI-powered IT ops for SMBs and MSPs
 | `create_ticket` | Create a new incident or request ticket |
 | `update_ticket` | Update status, add solution, or add a followup comment |
 | `assign_ticket` | Assign a ticket to a user and/or group — route to the right technician |
+
+**Problems (ITIL)**
+
+| Tool | Description |
+|------|-------------|
+| `list_problems` | List problems — check if a recurring incident is a known problem |
+| `get_problem` | Full problem details — root cause, workarounds, followups |
+| `create_problem` | Create a problem when multiple incidents share the same root cause |
+| `update_problem` | Advance status or add followup notes |
+
+**Changes (ITIL)**
+
+| Tool | Description |
+|------|-------------|
+| `list_changes` | List changes — check for planned work before remediating |
+| `get_change` | Full change details — approval status, planned dates, steps |
+| `create_change` | Create a change request to formally track a planned remediation |
+| `update_change` | Advance status (e.g. Applied after auto-remediation) or add followup |
+
+**Assets & CMDB**
+
+| Tool | Description |
+|------|-------------|
 | `get_asset` | Look up a server/computer in the CMDB — hardware, OS, warranty, location |
 | `search_assets_by_ip` | Look up a CMDB asset by IP address — for alerts that carry an IP not a hostname |
 | `search_recent_changes` | Recent changes recorded on a host — correlate incidents with changes |
@@ -29,9 +54,16 @@ pip install trianova-mcp-glpi
 ```bash
 GLPI_HOST=https://glpi.yourdomain.com
 GLPI_APP_TOKEN=your-app-token        # Generated in GLPI: Setup → General → API
+
+# Auth — user token (preferred)
 GLPI_USER_TOKEN=your-user-token      # Generated in GLPI: user profile → API token
-GLPI_VERIFY_SSL=true
-MCP_TRANSPORT=stdio
+
+# Auth — username/password (fallback if no user token)
+GLPI_USERNAME=your-username
+GLPI_PASSWORD=your-password
+
+GLPI_VERIFY_SSL=true                 # Set to false for self-signed certs
+MCP_TRANSPORT=stdio                  # stdio (default) or sse
 ```
 
 To enable the GLPI API: **Setup → General → API → Enable REST API → Add API client**.

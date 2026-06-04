@@ -14,6 +14,8 @@ mcp = FastMCP("GLPI ITSM")
 GLPI_HOST = os.environ.get("GLPI_HOST", "")
 GLPI_APP_TOKEN = os.environ.get("GLPI_APP_TOKEN", "")
 GLPI_USER_TOKEN = os.environ.get("GLPI_USER_TOKEN", "")
+GLPI_USERNAME = os.environ.get("GLPI_USERNAME", "")
+GLPI_PASSWORD = os.environ.get("GLPI_PASSWORD", "")
 GLPI_VERIFY_SSL = os.environ.get("GLPI_VERIFY_SSL", "true").lower() == "true"
 
 _session_cache: dict[str, str] = {}
@@ -30,6 +32,19 @@ def _client() -> httpx.AsyncClient:
     return httpx.AsyncClient(verify=GLPI_VERIFY_SSL, timeout=15.0)
 
 
+def _auth_header() -> str:
+    """Return the Authorization header value — user_token preferred, basic auth as fallback."""
+    if GLPI_USER_TOKEN:
+        return f"user_token {GLPI_USER_TOKEN}"
+    if GLPI_USERNAME and GLPI_PASSWORD:
+        import base64
+        credentials = base64.b64encode(f"{GLPI_USERNAME}:{GLPI_PASSWORD}".encode()).decode()
+        return f"Basic {credentials}"
+    raise RuntimeError(
+        "No GLPI credentials configured. Set GLPI_USER_TOKEN or GLPI_USERNAME + GLPI_PASSWORD."
+    )
+
+
 async def _init_session() -> str:
     """Open a new GLPI API session and cache it."""
     async with _client() as client:
@@ -37,7 +52,7 @@ async def _init_session() -> str:
             f"{_base_url()}/initSession",
             headers={
                 "App-Token": GLPI_APP_TOKEN,
-                "Authorization": f"user_token {GLPI_USER_TOKEN}",
+                "Authorization": _auth_header(),
             },
         )
         resp.raise_for_status()
@@ -89,6 +104,17 @@ _TICKET_PRIORITY = {
 
 # GLPI ticket types
 _TICKET_TYPE = {1: "Incident", 2: "Request"}
+
+# GLPI problem status codes
+_PROBLEM_STATUS = {
+    1: "New", 2: "Accepted", 3: "Planned", 4: "Pending", 5: "Solved", 6: "Closed"
+}
+
+# GLPI change status codes
+_CHANGE_STATUS = {
+    1: "New", 2: "Evaluation", 3: "Approval", 4: "Accepted", 5: "Pending",
+    6: "Test", 7: "Qualification", 8: "Applied", 9: "Review", 10: "Closed"
+}
 
 
 @mcp.tool()
@@ -448,6 +474,299 @@ async def list_categories(search: Optional[str] = None) -> str:
     for c in categories:
         lines.append(f"  ID {c.get('2', '?')} — {c.get('1', 'N/A')}")
     return "\n".join(lines)
+
+
+# ── Problem management ───────────────────────────────────────────────────────
+
+@mcp.tool()
+async def list_problems(status: Optional[str] = None, limit: int = 20) -> str:
+    """
+    List GLPI problems (ITIL Problem Management).
+    status values: 'new', 'accepted', 'planned', 'pending', 'solved', 'closed'
+    Use this to check if a recurring incident is already tracked as a known problem,
+    and to avoid creating duplicate tickets for a known root cause.
+    """
+    status_map = {
+        "new": 1, "accepted": 2, "planned": 3,
+        "pending": 4, "solved": 5, "closed": 6
+    }
+    params: dict = {
+        "range": f"0-{limit - 1}",
+        "forcedisplay[0]": 2,   # ID
+        "forcedisplay[1]": 1,   # Title
+        "forcedisplay[2]": 12,  # Status
+        "forcedisplay[3]": 19,  # Last update
+        "forcedisplay[4]": 10,  # Urgency
+    }
+    if status:
+        code = status_map.get(status.lower())
+        if code:
+            params["criteria[0][field]"] = "12"
+            params["criteria[0][searchtype]"] = "equals"
+            params["criteria[0][value]"] = str(code)
+
+    resp = await _request("GET", "/search/Problem", params=params)
+    data = resp.json()
+
+    problems = data.get("data", [])
+    if not problems:
+        return "No problems found in GLPI."
+
+    lines = [f"Problems ({data.get('totalcount', len(problems))} total, showing {len(problems)}):"]
+    for p in problems:
+        status_code = int(p.get("12", 0))
+        lines.append(
+            f"  #{p.get('2', '?')} [{_PROBLEM_STATUS.get(status_code, '?')}] "
+            f"{p.get('1', 'N/A')} | last update: {p.get('19', 'N/A')}"
+        )
+    return "\n".join(lines)
+
+
+@mcp.tool()
+async def get_problem(problem_id: int) -> str:
+    """
+    Get full details of a GLPI problem by ID, including description and followups.
+    Use this when an incident matches a known problem — get the root cause analysis
+    and any workarounds already documented.
+    """
+    resp = await _request("GET", f"/Problem/{problem_id}")
+    problem = resp.json()
+
+    fu_resp = await _request("GET", f"/Problem/{problem_id}/ITILFollowup", params={"range": "0-5"})
+    followups = fu_resp.json() if fu_resp.status_code == 200 else []
+
+    status_code = problem.get("status", 0)
+    priority_code = problem.get("priority", 0)
+
+    lines = [
+        f"Problem #{problem_id}",
+        f"Status: {_PROBLEM_STATUS.get(status_code, '?')}",
+        f"Priority: {_TICKET_PRIORITY.get(priority_code, '?')}",
+        f"Title: {problem.get('name', 'N/A')}",
+        f"Created: {problem.get('date', 'N/A')}",
+        f"Last update: {problem.get('date_mod', 'N/A')}",
+        f"Description: {problem.get('content', 'N/A')[:500]}",
+    ]
+    if followups and isinstance(followups, list):
+        lines.append(f"\nFollowups ({len(followups)}):")
+        for f in followups[-5:]:
+            lines.append(f"  [{f.get('date', '?')}] {f.get('content', '')[:200]}")
+
+    return "\n".join(lines)
+
+
+@mcp.tool()
+async def create_problem(
+    title: str,
+    description: str,
+    priority: int = 3,
+) -> str:
+    """
+    Create a new ITIL Problem in GLPI.
+    priority: 1=Very Low, 2=Low, 3=Medium, 4=High, 5=Very High, 6=Major
+    Use this when multiple incidents share the same root cause and need
+    formal problem tracking (e.g. recurring disk failures on a storage array).
+    Returns the created problem ID.
+    """
+    resp = await _request("POST", "/Problem", json={
+        "input": {
+            "name": title,
+            "content": description,
+            "priority": priority,
+            "urgency": priority,
+            "impact": priority,
+            "status": 1,
+        }
+    })
+    created = resp.json()
+    problem_id = created.get("id", "?")
+    return (
+        f"Problem #{problem_id} created in GLPI | "
+        f"Priority: {_TICKET_PRIORITY.get(priority, '?')} | "
+        f"Title: {title}"
+    )
+
+
+@mcp.tool()
+async def update_problem(
+    problem_id: int,
+    status: Optional[int] = None,
+    followup: Optional[str] = None,
+) -> str:
+    """
+    Update a GLPI problem: change its status or add a followup.
+    status: 1=New, 2=Accepted, 3=Planned, 4=Pending, 5=Solved, 6=Closed
+    Use this to close a problem once the root cause is fixed, or to add
+    investigation notes as followups.
+    """
+    if status is not None:
+        await _request("PUT", f"/Problem/{problem_id}", json={"input": {"status": status}})
+
+    if followup:
+        await _request("POST", "/ITILFollowup", json={
+            "input": {"items_id": problem_id, "itemtype": "Problem", "content": followup}
+        })
+
+    parts = []
+    if status is not None:
+        parts.append(f"status → {_PROBLEM_STATUS.get(status, '?')}")
+    if followup:
+        parts.append("followup added")
+
+    return f"Problem #{problem_id} updated: {', '.join(parts)}"
+
+
+# ── Change management ─────────────────────────────────────────────────────────
+
+@mcp.tool()
+async def list_changes(status: Optional[str] = None, limit: int = 20) -> str:
+    """
+    List GLPI changes (ITIL Change Management).
+    status values: 'new', 'evaluation', 'approval', 'accepted', 'pending',
+                   'test', 'qualification', 'applied', 'review', 'closed'
+    Use this before remediating an incident to check if a related change is
+    already planned or approved — avoids conflicting actions.
+    """
+    status_map = {
+        "new": 1, "evaluation": 2, "approval": 3, "accepted": 4, "pending": 5,
+        "test": 6, "qualification": 7, "applied": 8, "review": 9, "closed": 10
+    }
+    params: dict = {
+        "range": f"0-{limit - 1}",
+        "forcedisplay[0]": 2,   # ID
+        "forcedisplay[1]": 1,   # Title
+        "forcedisplay[2]": 12,  # Status
+        "forcedisplay[3]": 19,  # Last update
+        "forcedisplay[4]": 10,  # Urgency
+    }
+    if status:
+        code = status_map.get(status.lower())
+        if code:
+            params["criteria[0][field]"] = "12"
+            params["criteria[0][searchtype]"] = "equals"
+            params["criteria[0][value]"] = str(code)
+
+    resp = await _request("GET", "/search/Change", params=params)
+    data = resp.json()
+
+    changes = data.get("data", [])
+    if not changes:
+        return "No changes found in GLPI."
+
+    lines = [f"Changes ({data.get('totalcount', len(changes))} total, showing {len(changes)}):"]
+    for c in changes:
+        status_code = int(c.get("12", 0))
+        lines.append(
+            f"  #{c.get('2', '?')} [{_CHANGE_STATUS.get(status_code, '?')}] "
+            f"{c.get('1', 'N/A')} | last update: {c.get('19', 'N/A')}"
+        )
+    return "\n".join(lines)
+
+
+@mcp.tool()
+async def get_change(change_id: int) -> str:
+    """
+    Get full details of a GLPI change request by ID.
+    Use this to understand what is planned — implementation steps, approval status,
+    scheduled date — before taking any automated action on the affected host.
+    """
+    resp = await _request("GET", f"/Change/{change_id}")
+    change = resp.json()
+
+    fu_resp = await _request("GET", f"/Change/{change_id}/ITILFollowup", params={"range": "0-5"})
+    followups = fu_resp.json() if fu_resp.status_code == 200 else []
+
+    status_code = change.get("status", 0)
+    priority_code = change.get("priority", 0)
+
+    lines = [
+        f"Change #{change_id}",
+        f"Status: {_CHANGE_STATUS.get(status_code, '?')}",
+        f"Priority: {_TICKET_PRIORITY.get(priority_code, '?')}",
+        f"Title: {change.get('name', 'N/A')}",
+        f"Created: {change.get('date', 'N/A')}",
+        f"Last update: {change.get('date_mod', 'N/A')}",
+        f"Planned start: {change.get('begin_date', 'N/A')}",
+        f"Planned end: {change.get('end_date', 'N/A')}",
+        f"Description: {change.get('content', 'N/A')[:500]}",
+    ]
+    if followups and isinstance(followups, list):
+        lines.append(f"\nFollowups ({len(followups)}):")
+        for f in followups[-5:]:
+            lines.append(f"  [{f.get('date', '?')}] {f.get('content', '')[:200]}")
+
+    return "\n".join(lines)
+
+
+@mcp.tool()
+async def create_change(
+    title: str,
+    description: str,
+    priority: int = 3,
+    begin_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+) -> str:
+    """
+    Create a new ITIL Change request in GLPI.
+    priority: 1=Very Low, 2=Low, 3=Medium, 4=High, 5=Very High, 6=Major
+    begin_date / end_date: ISO format 'YYYY-MM-DD HH:MM:SS' (optional)
+    Use this to formally track a planned remediation action — OS update,
+    config change, hardware replacement — before executing it.
+    Returns the created change ID.
+    """
+    payload: dict = {
+        "input": {
+            "name": title,
+            "content": description,
+            "priority": priority,
+            "urgency": priority,
+            "impact": priority,
+            "status": 1,
+        }
+    }
+    if begin_date:
+        payload["input"]["begin_date"] = begin_date
+    if end_date:
+        payload["input"]["end_date"] = end_date
+
+    resp = await _request("POST", "/Change", json=payload)
+    created = resp.json()
+    change_id = created.get("id", "?")
+    return (
+        f"Change #{change_id} created in GLPI | "
+        f"Priority: {_TICKET_PRIORITY.get(priority, '?')} | "
+        f"Title: {title}"
+    )
+
+
+@mcp.tool()
+async def update_change(
+    change_id: int,
+    status: Optional[int] = None,
+    followup: Optional[str] = None,
+) -> str:
+    """
+    Update a GLPI change: advance its status or add a followup.
+    status: 1=New, 2=Evaluation, 3=Approval, 4=Accepted, 5=Pending,
+            6=Test, 7=Qualification, 8=Applied, 9=Review, 10=Closed
+    Use this to mark a change as Applied after auto-remediation completes,
+    or to move it through the approval workflow.
+    """
+    if status is not None:
+        await _request("PUT", f"/Change/{change_id}", json={"input": {"status": status}})
+
+    if followup:
+        await _request("POST", "/ITILFollowup", json={
+            "input": {"items_id": change_id, "itemtype": "Change", "content": followup}
+        })
+
+    parts = []
+    if status is not None:
+        parts.append(f"status → {_CHANGE_STATUS.get(status, '?')}")
+    if followup:
+        parts.append("followup added")
+
+    return f"Change #{change_id} updated: {', '.join(parts)}"
 
 
 def main() -> None:
